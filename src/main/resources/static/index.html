@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Verification engine</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bpmn-js@18.6.2/dist/assets/diagram-js.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bpmn-js@18.6.2/dist/assets/bpmn-js.css">
+    <style>
+        :root {
+            --bg: #f6f7f9;
+            --surface: #ffffff;
+            --text: #1d2330;
+            --muted: #5f6b7a;
+            --border: #dfe3e8;
+            --accent: #2f5bd3;
+            --accent-soft: #e8eefc;
+            --ok: #1d7a46;
+            --ok-soft: #e3f4ea;
+            --warn: #9a5b00;
+            --warn-soft: #fdf1dc;
+            --bad: #b4232c;
+            --bad-soft: #fbe6e7;
+            --neutral-soft: #eef0f3;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #12151b;
+                --surface: #1b1f27;
+                --text: #e6e9ef;
+                --muted: #9aa4b2;
+                --border: #2c323d;
+                --accent: #8aa8ff;
+                --accent-soft: #1f2a45;
+                --ok: #6fd39a;
+                --ok-soft: #173326;
+                --warn: #f0b75c;
+                --warn-soft: #3a2c14;
+                --bad: #ff8a90;
+                --bad-soft: #3d1c1f;
+                --neutral-soft: #262b35;
+            }
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+
+        main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+
+        header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 20px; }
+        h1 { margin: 0; font-size: 20px; font-weight: 600; }
+        h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+        h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+        .muted { color: var(--muted); }
+        header .muted { flex: 1; }
+
+        button {
+            font: inherit;
+            color: var(--text);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+        }
+        button:hover { border-color: var(--accent); }
+
+        .banner { padding: 10px 14px; border-radius: 8px; background: var(--bad-soft); color: var(--bad); margin-bottom: 16px; }
+
+        .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 0; }
+        .tabs button {
+            border: 0;
+            border-bottom: 2px solid transparent;
+            border-radius: 0;
+            background: none;
+            padding: 8px 12px;
+            color: var(--muted);
+        }
+        .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+        .count { display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 10px; background: var(--neutral-soft); font-size: 12px; text-align: center; }
+        .count.alert { background: var(--bad-soft); color: var(--bad); }
+
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+        .list { border-top: 0; border-radius: 0 0 8px 8px; overflow-x: auto; }
+        .hint { padding: 10px 14px; margin: 0; border-bottom: 1px solid var(--border); }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        th { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+        tbody tr:last-child td { border-bottom: 0; }
+        tbody tr.selectable { cursor: pointer; }
+        tbody tr.selectable:hover { background: var(--neutral-soft); }
+        tbody tr.selected { background: var(--accent-soft); }
+        td.wrap { max-width: 420px; overflow-wrap: anywhere; }
+        .empty { padding: 28px 14px; text-align: center; color: var(--muted); }
+
+        .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+        .pill.ok { background: var(--ok-soft); color: var(--ok); }
+        .pill.warn { background: var(--warn-soft); color: var(--warn); }
+        .pill.bad { background: var(--bad-soft); color: var(--bad); }
+        .pill.info { background: var(--accent-soft); color: var(--accent); }
+        .pill.neutral { background: var(--neutral-soft); color: var(--muted); }
+
+        .detail { margin-top: 20px; padding: 16px; }
+        .detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+
+        /* The diagram keeps a light canvas in both themes so BPMN shapes stay legible. */
+        #diagram { height: 320px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+        .legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 8px 0 16px; font-size: 12px; color: var(--muted); }
+        .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; vertical-align: -1px; }
+        .legend .done::before { background: #1d7a46; }
+        .legend .current::before { background: #d97706; }
+        .legend .failed::before { background: #b4232c; }
+
+        .djs-element.done .djs-visual > :nth-child(1) { stroke: #1d7a46 !important; fill: #e3f4ea !important; }
+        .djs-connection.done .djs-visual > path { stroke: #1d7a46 !important; }
+        .djs-element.current .djs-visual > :nth-child(1) { stroke: #d97706 !important; stroke-width: 3px !important; fill: #fdf1dc !important; }
+        .djs-element.failed .djs-visual > :nth-child(1) { stroke: #b4232c !important; stroke-width: 3px !important; fill: #fbe6e7 !important; }
+
+        .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .columns table td, .columns table th { padding: 6px 8px; }
+        code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <h1>Customer verification and scoring engine</h1>
+        <span class="muted" id="updated">Loading…</span>
+        <button type="button" id="refresh">Refresh</button>
+    </header>
+
+    <p class="banner" id="error" hidden></p>
+
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <section class="card list" id="list" aria-live="polite"></section>
+
+    <section class="card detail" id="detail" hidden>
+        <div class="detail-head">
+            <div>
+                <h2 id="detail-title"></h2>
+                <div class="muted" id="detail-subtitle"></div>
+            </div>
+            <button type="button" id="close-detail">Close</button>
+        </div>
+        <div id="diagram"></div>
+        <div class="legend"><span class="done">Completed</span><span class="current">Current step</span><span class="failed">Failing job</span></div>
+        <div class="columns">
+            <div>
+                <h3>Steps</h3>
+                <table><thead><tr><th>Step</th><th>Started</th><th>Took</th></tr></thead><tbody id="steps"></tbody></table>
+            </div>
+            <div>
+                <h3>Variables</h3>
+                <table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody id="variables"></tbody></table>
+            </div>
+        </div>
+    </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bpmn-js@18.6.2/dist/bpmn-navigated-viewer.production.min.js"></script>
+<script>
+    /*
+     * A read-only view of the engine, built on its own REST API. The browser already
+     * holds the basic-auth login from opening this page, so the API calls reuse it.
+     */
+    const API = '/process-api/';
+    const VERIFICATION_KEY = 'customerVerification';
+    const SCORING_KEY = 'financialScoring';
+    const PROCESS_NAMES = { [VERIFICATION_KEY]: 'Verification', [SCORING_KEY]: 'Financial scoring' };
+    const REVIEW_GROUP = 'compliance';
+    const PAGE_SIZE = 100;
+    const REFRESH_EVERY_MS = 15000;
+
+    const TABS = [
+        { key: 'inProgress', label: 'In progress' },
+        { key: 'review', label: 'Awaiting review' },
+        { key: 'finished', label: 'Finished' },
+        { key: 'failed', label: 'Failed jobs' },
+    ];
+
+    const state = { tab: 'inProgress', data: null, selectedId: null };
+    const definitionXml = new Map();
+    const activityNames = new Map();
+    let viewer = null;
+    let shownDefinitionId = null;
+
+    const $ = (id) => document.getElementById(id);
+
+    /** Builds an element; strings become text nodes, so values are never parsed as HTML. */
+    function el(tag, props = {}, ...children) {
+        const node = document.createElement(tag);
+        for (const [key, value] of Object.entries(props)) {
+            if (key === 'class') node.className = value;
+            else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+            else node.setAttribute(key, value);
+        }
+        for (const child of children.flat()) {
+            if (child !== null && child !== undefined && child !== false) {
+                node.append(child instanceof Node ? child : String(child));
+            }
+        }
+        return node;
+    }
+
+    async function api(path) {
+        const response = await fetch(API + path, { headers: { Accept: 'application/json' } });
+        if (!response.ok) {
+            throw new Error(`The engine answered ${response.status} for ${path.split('?')[0]}`);
+        }
+        return response;
+    }
+
+    const getJson = async (path) => (await api(path)).json();
+
+    function xmlFor(definitionId) {
+        if (!definitionXml.has(definitionId)) {
+            const request = api(`repository/process-definitions/${encodeURIComponent(definitionId)}/resourcedata`)
+                .then((response) => response.text())
+                .catch((error) => { definitionXml.delete(definitionId); throw error; });
+            definitionXml.set(definitionId, request);
+        }
+        return definitionXml.get(definitionId);
+    }
+
+    async function loadActivityNames(definitionId) {
+        if (activityNames.has(definitionId)) return;
+        const doc = new DOMParser().parseFromString(await xmlFor(definitionId), 'application/xml');
+        const names = new Map();
+        for (const node of doc.querySelectorAll('[id]')) {
+            names.set(node.getAttribute('id'), node.getAttribute('name') || node.getAttribute('id'));
+        }
+        activityNames.set(definitionId, names);
+    }
+
+    const stepName = (definitionId, activityId) => activityNames.get(definitionId)?.get(activityId) ?? activityId;
+    const variable = (instance, name) => instance.variables?.find((v) => v.name === name)?.value;
+
+    function formatTime(iso) {
+        return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' }) : '—';
+    }
+
+    function formatDuration(ms) {
+        if (ms === null || ms === undefined) return '—';
+        if (ms < 1000) return `${ms} ms`;
+        if (ms < 60000) return `${Math.round(ms / 1000)} s`;
+        if (ms < 3600000) return `${Math.round(ms / 60000)} min`;
+        return `${(ms / 3600000).toFixed(1)} h`;
+    }
+
+    function customerLabel(instance) {
+        const customerId = variable(instance, 'customerId');
+        return customerId === undefined ? '—' : `#${customerId}`;
+    }
+
+    /** Process definition ids look like "customerVerification:3:1234". */
+    const processKey = (instance) => instance.processDefinitionId.split(':')[0];
+    const processName = (instance) => PROCESS_NAMES[processKey(instance)] ?? processKey(instance);
+
+    const RISK_PILLS = { low: 'ok', medium: 'warn', high: 'bad' };
+
+    /** Runs of verification process version 2 and earlier ended without verificationOutcome, so it's derived for them. */
+    function outcome(instance) {
+        if (instance.deleteReason) return el('span', { class: 'pill neutral', title: instance.deleteReason }, 'Cancelled');
+        if (processKey(instance) === SCORING_KEY) {
+            const band = variable(instance, 'riskBand');
+            return band
+                ? el('span', { class: `pill ${RISK_PILLS[band] ?? 'neutral'}` }, `Scored ${variable(instance, 'financialScore')} · ${band} risk`)
+                : el('span', { class: 'pill neutral' }, 'Ended');
+        }
+        const decision = variable(instance, 'reviewDecision');
+        const result = variable(instance, 'verificationOutcome')
+            ?? (variable(instance, 'verificationStatus') === 'verified' ? 'verified' : decision);
+        if (result === 'verified') return el('span', { class: 'pill ok' }, 'Verified');
+        if (result === 'approved') return el('span', { class: 'pill ok' }, 'Flagged → approved');
+        if (result === 'rejected') return el('span', { class: 'pill bad' }, 'Flagged → rejected');
+        return el('span', { class: 'pill neutral' }, 'Ended');
+    }
+
+    async function load() {
+        // The engine only runs the verification and scoring processes, so runs aren't filtered by process.
+        const query = `includeProcessVariables=true&sort=startTime&order=desc&size=${PAGE_SIZE}`;
+        const [open, finished, executions, tasks, failing, retrying, deadLetter] = await Promise.all([
+            getJson(`history/historic-process-instances?${query}&finished=false`),
+            getJson(`history/historic-process-instances?${query}&finished=true`),
+            getJson('runtime/executions?size=1000'),
+            getJson(`runtime/tasks?processDefinitionKey=${VERIFICATION_KEY}&candidateGroup=${REVIEW_GROUP}&size=${PAGE_SIZE}`),
+            getJson(`management/jobs?withException=true&size=${PAGE_SIZE}`),
+            getJson(`management/timer-jobs?withException=true&size=${PAGE_SIZE}`),
+            getJson(`management/deadletter-jobs?size=${PAGE_SIZE}`),
+        ]);
+
+        const definitionIds = new Set([...open.data, ...finished.data].map((instance) => instance.processDefinitionId));
+        await Promise.all([...definitionIds].map(loadActivityNames));
+
+        const currentSteps = new Map();
+        for (const execution of executions.data) {
+            if (execution.activityId) {
+                const steps = currentSteps.get(execution.processInstanceId) ?? [];
+                steps.push(execution.activityId);
+                currentSteps.set(execution.processInstanceId, steps);
+            }
+        }
+
+        const failedJobs = [
+            ...failing.data.map((job) => ({ ...job, state: 'Failing' })),
+            ...retrying.data.map((job) => ({ ...job, state: 'Waiting to retry' })),
+            ...deadLetter.data.map((job) => ({ ...job, state: 'Gave up' })),
+        ];
+
+        state.data = {
+            open: open.data,
+            openTotal: open.total,
+            finished: finished.data,
+            finishedTotal: finished.total,
+            tasks: tasks.data,
+            currentSteps,
+            reviewTasks: new Map(tasks.data.map((task) => [task.processInstanceId, task])),
+            failedJobs,
+            instancesById: new Map([...open.data, ...finished.data].map((instance) => [instance.id, instance])),
+        };
+    }
+
+    function renderTabs() {
+        const { data } = state;
+        const counts = {
+            inProgress: data.openTotal,
+            review: data.tasks.length,
+            finished: data.finishedTotal,
+            failed: data.failedJobs.length,
+        };
+        $('tabs').replaceChildren(...TABS.map((tab) => el('button', {
+            type: 'button',
+            role: 'tab',
+            'aria-selected': String(state.tab === tab.key),
+            onclick: () => { state.tab = tab.key; renderTabs(); renderList(); },
+        }, tab.label, el('span', { class: `count${tab.key === 'failed' && counts.failed > 0 ? ' alert' : ''}` }, counts[tab.key]))));
+    }
+
+    function row(instanceId, cells) {
+        const selectable = state.data.instancesById.has(instanceId);
+        return el('tr', {
+            class: [selectable ? 'selectable' : '', instanceId === state.selectedId ? 'selected' : ''].join(' ').trim(),
+            ...(selectable ? { onclick: () => select(instanceId) } : {}),
+        }, cells.map((cell) => (cell instanceof Node && cell.tagName === 'TD' ? cell : el('td', {}, cell))));
+    }
+
+    function table(headings, rows, emptyText, hint) {
+        if (rows.length === 0) {
+            return [hint ? el('p', { class: 'hint muted' }, hint) : null, el('div', { class: 'empty' }, emptyText)].filter(Boolean);
+        }
+        return [
+            hint ? el('p', { class: 'hint muted' }, hint) : null,
+            el('table', {}, el('thead', {}, el('tr', {}, headings.map((h) => el('th', {}, h)))), el('tbody', {}, rows)),
+        ].filter(Boolean);
+    }
+
+    function moreHint(shown, total) {
+        return total > shown ? `Showing the newest ${shown} of ${total}.` : null;
+    }
+
+    function renderList() {
+        const { data } = state;
+        let content;
+
+        if (state.tab === 'inProgress') {
+            content = table(['Customer', 'Process', 'Run', 'Started', 'Current step', 'Status'], data.open.map((instance) => {
+                const steps = (data.currentSteps.get(instance.id) ?? []).map((id) => stepName(instance.processDefinitionId, id));
+                const awaitingReview = data.reviewTasks.has(instance.id);
+                return row(instance.id, [
+                    customerLabel(instance),
+                    processName(instance),
+                    variable(instance, 'runId') ?? '—',
+                    formatTime(instance.startTime),
+                    steps.join(', ') || '—',
+                    awaitingReview ? el('span', { class: 'pill warn' }, 'Awaiting review') : el('span', { class: 'pill info' }, 'Running'),
+                ]);
+            }), 'No checks are in progress.', moreHint(data.open.length, data.openTotal));
+        } else if (state.tab === 'review') {
+            content = table(['Customer', 'Run', 'Review', 'Flagged', 'Waiting'], data.tasks.map((task) => {
+                const instance = data.instancesById.get(task.processInstanceId);
+                return row(task.processInstanceId, [
+                    instance ? customerLabel(instance) : '—',
+                    instance ? (variable(instance, 'runId') ?? '—') : '—',
+                    task.name,
+                    formatTime(task.createTime),
+                    formatDuration(Date.now() - new Date(task.createTime).getTime()),
+                ]);
+            }), 'No flagged customers are waiting for review.',
+            'Decide reviews on the Compliance reviews page in the Laravel app, so the decision is recorded and audited there.');
+        } else if (state.tab === 'finished') {
+            content = table(['Customer', 'Process', 'Run', 'Started', 'Took', 'Outcome'], data.finished.map((instance) => row(instance.id, [
+                customerLabel(instance),
+                processName(instance),
+                variable(instance, 'runId') ?? '—',
+                formatTime(instance.startTime),
+                formatDuration(instance.durationInMillis),
+                outcome(instance),
+            ])), 'No checks have finished yet.', moreHint(data.finished.length, data.finishedTotal));
+        } else {
+            content = table(['Customer', 'Step', 'State', 'Retries left', 'Error'], data.failedJobs.map((job) => {
+                const instance = data.instancesById.get(job.processInstanceId);
+                return row(job.processInstanceId, [
+                    instance ? customerLabel(instance) : '—',
+                    job.elementName || job.elementId || '—',
+                    el('span', { class: `pill ${job.state === 'Gave up' ? 'bad' : 'warn'}` }, job.state),
+                    job.retries ?? '—',
+                    el('td', { class: 'wrap' }, el('code', {}, job.exceptionMessage || '—')),
+                ]);
+            }), 'No failed jobs. Steps that call Laravel show up here when it can’t be reached.',
+            'Flowable retries a failing step 3 times, then moves it to “Gave up”. Fix the cause, then retry it with the REST API (management/deadletter-jobs).');
+        }
+
+        $('list').replaceChildren(...content);
+    }
+
+    async function select(instanceId) {
+        state.selectedId = instanceId;
+        renderList();
+        try {
+            await renderDetail();
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function renderDetail() {
+        const instance = state.data.instancesById.get(state.selectedId);
+        if (!instance) {
+            $('detail').hidden = true;
+            return;
+        }
+
+        $('detail').hidden = false;
+        $('detail-title').textContent = `${processName(instance)} · customer ${customerLabel(instance)} · run ${variable(instance, 'runId') ?? '—'}`;
+        $('detail-subtitle').replaceChildren(
+            instance.endTime ? outcome(instance) : el('span', { class: 'pill info' }, 'In progress'),
+            ' ', el('code', {}, instance.businessKey ?? instance.id),
+            instance.deleteReason ? ` · ${instance.deleteReason}` : '',
+        );
+
+        const [xml, activities] = await Promise.all([
+            xmlFor(instance.processDefinitionId),
+            getJson(`history/historic-activity-instances?processInstanceId=${encodeURIComponent(instance.id)}&size=500`),
+        ]);
+
+        renderSteps(instance, activities.data);
+
+        if (shownDefinitionId !== instance.processDefinitionId) {
+            viewer?.destroy();
+            viewer = null;
+            shownDefinitionId = null;
+            $('diagram').replaceChildren();
+            try {
+                viewer = new BpmnJS({ container: '#diagram' });
+                await viewer.importXML(xml);
+                shownDefinitionId = instance.processDefinitionId;
+            } catch {
+                viewer?.destroy();
+                viewer = null;
+                $('diagram').replaceChildren(el('div', { class: 'empty' },
+                    'No diagram: this run used an older version of the process that has no diagram layout.'));
+                return;
+            }
+        }
+
+        const canvas = viewer.get('canvas');
+        const registry = viewer.get('elementRegistry');
+        for (const element of registry.getAll()) {
+            ['done', 'current', 'failed'].forEach((marker) => canvas.removeMarker(element.id, marker));
+        }
+
+        const mark = (activityId, marker) => {
+            if (registry.get(activityId)) {
+                ['done', 'current', 'failed'].forEach((other) => canvas.removeMarker(activityId, other));
+                canvas.addMarker(activityId, marker);
+            }
+        };
+        for (const activity of activities.data) {
+            mark(activity.activityId, activity.endTime ? 'done' : 'current');
+        }
+        for (const activityId of state.data.currentSteps.get(instance.id) ?? []) {
+            mark(activityId, 'current');
+        }
+        for (const job of state.data.failedJobs.filter((job) => job.processInstanceId === instance.id)) {
+            mark(job.elementId, 'failed');
+        }
+        canvas.zoom('fit-viewport', 'auto');
+    }
+
+    function renderSteps(instance, activities) {
+        const steps = activities
+            .filter((activity) => activity.activityType !== 'sequenceFlow')
+            .sort((a, b) => a.startTime.localeCompare(b.startTime));
+        $('steps').replaceChildren(...steps.map((activity) => el('tr', {},
+            el('td', {}, activity.activityName || stepName(instance.processDefinitionId, activity.activityId)),
+            el('td', {}, formatTime(activity.startTime)),
+            el('td', {}, activity.endTime ? formatDuration(activity.durationInMillis) : 'in progress'),
+        )));
+
+        const variables = [...(instance.variables ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+        $('variables').replaceChildren(...variables.map((v) => el('tr', {},
+            el('td', {}, el('code', {}, v.name)),
+            el('td', { class: 'wrap' }, v.type === 'serializable' ? el('span', { class: 'muted' }, 'stored Java object') : (v.value ?? '—')),
+        )));
+    }
+
+    function showError(error) {
+        $('error').textContent = `Couldn’t load from the engine: ${error.message}`;
+        $('error').hidden = false;
+    }
+
+    let refreshing = false;
+
+    async function refresh() {
+        if (refreshing) return;
+        refreshing = true;
+        try {
+            await load();
+            $('error').hidden = true;
+            renderTabs();
+            renderList();
+            if (state.selectedId) {
+                await renderDetail();
+            }
+            $('updated').textContent = `Updated ${new Date().toLocaleTimeString()} · refreshes every ${REFRESH_EVERY_MS / 1000} s`;
+        } catch (error) {
+            showError(error);
+        } finally {
+            refreshing = false;
+        }
+    }
+
+    $('refresh').addEventListener('click', refresh);
+    $('close-detail').addEventListener('click', () => {
+        state.selectedId = null;
+        $('detail').hidden = true;
+        renderList();
+    });
+    setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, REFRESH_EVERY_MS);
+    refresh();
+</script>
+</body>
+</html>

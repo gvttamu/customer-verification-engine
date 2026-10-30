@@ -1,0 +1,15 @@
+{
+  "list": "Demo sanctions list",
+  "phones": [
+    "+1 555 010 0666",
+    "+44 20 7946 0999"
+  ],
+  "emails": [
+    "blocked@example.com",
+    "evil.corp@example.net"
+  ],
+  "addresses": [
+    { "line1": "666 Shadow Lane", "postal_code": "66666", "country": "United States" },
+    { "line1": "13 Blackwater Road", "postal_code": "EC1A 1BB", "country": "United Kingdom" }
+  ]
+}

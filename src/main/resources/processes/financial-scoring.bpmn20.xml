@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Financial scoring: fetch the customer's monthly income and outgoings, and the loan they
+  are applying for, from the Laravel app; score how well they can afford their commitments
+  with the new loan's estimated repayment (see FinancialScorecard), and
+  report the score back. The Laravel app starts a new run whenever these details change.
+
+  Every service task is async, so a failed call is retried by the job executor
+  instead of failing the whole process.
+-->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             targetNamespace="http://guestbook.dev/scoring">
+
+    <process id="financialScoring" name="Financial scoring" isExecutable="true">
+        <startEvent id="financialsSubmitted" name="Financials submitted"/>
+        <sequenceFlow id="toFetchFinancials" sourceRef="financialsSubmitted" targetRef="fetchFinancials"/>
+
+        <serviceTask id="fetchFinancials" name="Fetch customer financials"
+                     flowable:async="true" flowable:delegateExpression="${fetchCustomerFinancials}"/>
+        <sequenceFlow id="toScoreFinancials" sourceRef="fetchFinancials" targetRef="scoreFinancials"/>
+
+        <serviceTask id="scoreFinancials" name="Score affordability"
+                     flowable:async="true" flowable:delegateExpression="${scoreCustomerFinancials}"/>
+        <sequenceFlow id="toReportScore" sourceRef="scoreFinancials" targetRef="reportScore"/>
+
+        <serviceTask id="reportScore" name="Report score to customer app"
+                     flowable:async="true" flowable:delegateExpression="${reportFinancialScore}"/>
+        <sequenceFlow id="toScoringComplete" sourceRef="reportScore" targetRef="scoringComplete"/>
+
+        <endEvent id="scoringComplete" name="Scoring complete"/>
+    </process>
+
+    <bpmndi:BPMNDiagram id="financialScoring_diagram">
+        <bpmndi:BPMNPlane id="financialScoring_plane" bpmnElement="financialScoring">
+            <bpmndi:BPMNShape id="financialsSubmitted_di" bpmnElement="financialsSubmitted">
+                <dc:Bounds x="40" y="182" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="fetchFinancials_di" bpmnElement="fetchFinancials">
+                <dc:Bounds x="120" y="160" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="scoreFinancials_di" bpmnElement="scoreFinancials">
+                <dc:Bounds x="270" y="160" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reportScore_di" bpmnElement="reportScore">
+                <dc:Bounds x="420" y="160" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="scoringComplete_di" bpmnElement="scoringComplete">
+                <dc:Bounds x="570" y="182" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+
+            <bpmndi:BPMNEdge id="toFetchFinancials_di" bpmnElement="toFetchFinancials">
+                <di:waypoint x="76" y="200"/>
+                <di:waypoint x="120" y="200"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="toScoreFinancials_di" bpmnElement="toScoreFinancials">
+                <di:waypoint x="220" y="200"/>
+                <di:waypoint x="270" y="200"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="toReportScore_di" bpmnElement="toReportScore">
+                <di:waypoint x="370" y="200"/>
+                <di:waypoint x="420" y="200"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="toScoringComplete_di" bpmnElement="toScoringComplete">
+                <di:waypoint x="520" y="200"/>
+                <di:waypoint x="570" y="200"/>
+            </bpmndi:BPMNEdge>
+        </bpmndi:BPMNPlane>
+    </bpmndi:BPMNDiagram>
+</definitions>

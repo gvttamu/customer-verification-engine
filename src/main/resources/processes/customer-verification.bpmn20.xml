@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Customer verification: fetch the customer from the Laravel app, then screen the
+  contact details and the address in turn. A step that finds a sanctions match is
+  reported to the Laravel app and waits for a compliance review of that match; an
+  approved contact match goes on to the address check, a rejected one ends the
+  check. The outcome (verified, approved or rejected) is reported at the end.
+
+  Every service task is async, so a failed call is retried by the job executor
+  instead of failing the whole process.
+-->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             targetNamespace="http://guestbook.dev/verification">
+
+    <process id="customerVerification" name="Customer verification workflow" isExecutable="true">
+        <startEvent id="customerSubmitted" name="Customer submitted"/>
+        <sequenceFlow id="toFetchCustomer" sourceRef="customerSubmitted" targetRef="fetchCustomer"/>
+
+        <serviceTask id="fetchCustomer" name="Fetch customer details"
+                     flowable:async="true" flowable:delegateExpression="${fetchCustomerDetails}"/>
+        <sequenceFlow id="toScreenContact" sourceRef="fetchCustomer" targetRef="screenContact"/>
+
+        <!-- Step 1: contact details -->
+        <serviceTask id="screenContact" name="Step 1: Validate contact info"
+                     flowable:async="true" flowable:delegateExpression="${screenContactDetails}"/>
+        <sequenceFlow id="toContactClear" sourceRef="screenContact" targetRef="contactClear"/>
+
+        <exclusiveGateway id="contactClear" name="Contact info clear?" default="contactFlagged"/>
+        <sequenceFlow id="contactOk" name="Yes" sourceRef="contactClear" targetRef="screenAddress">
+            <conditionExpression xsi:type="tFormalExpression">${contactMatches.isEmpty()}</conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="contactFlagged" name="No" sourceRef="contactClear" targetRef="reportContactMatch"/>
+
+        <serviceTask id="reportContactMatch" name="Report contact match"
+                     flowable:async="true" flowable:delegateExpression="${reportContactMatches}"/>
+        <sequenceFlow id="toReviewContact" sourceRef="reportContactMatch" targetRef="reviewContact"/>
+
+        <!--
+          Review tasks are completed by a compliance officer in the Laravel app, which
+          sets reviewDecision ("approved" or "rejected") and reviewNotes.
+        -->
+        <userTask id="reviewContact" name="Review contact match" flowable:candidateGroups="compliance"/>
+        <sequenceFlow id="toContactDecision" sourceRef="reviewContact" targetRef="contactDecision"/>
+
+        <exclusiveGateway id="contactDecision" name="Contact match approved?" default="contactApproved"/>
+        <sequenceFlow id="contactApproved" name="Approved" sourceRef="contactDecision" targetRef="screenAddress"/>
+        <sequenceFlow id="contactRejected" name="Rejected" sourceRef="contactDecision" targetRef="reportOutcome">
+            <conditionExpression xsi:type="tFormalExpression">${reviewDecision == 'rejected'}</conditionExpression>
+        </sequenceFlow>
+
+        <!-- Step 2: address -->
+        <serviceTask id="screenAddress" name="Step 2: Validate address info"
+                     flowable:async="true" flowable:delegateExpression="${screenAddressDetails}"/>
+        <sequenceFlow id="toAddressClear" sourceRef="screenAddress" targetRef="addressClear"/>
+
+        <exclusiveGateway id="addressClear" name="Address clear?" default="addressFlagged"/>
+        <sequenceFlow id="addressOk" name="Yes" sourceRef="addressClear" targetRef="reportOutcome">
+            <conditionExpression xsi:type="tFormalExpression">${addressMatches.isEmpty()}</conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="addressFlagged" name="No" sourceRef="addressClear" targetRef="reportAddressMatch"/>
+
+        <serviceTask id="reportAddressMatch" name="Report address match"
+                     flowable:async="true" flowable:delegateExpression="${reportAddressMatches}"/>
+        <sequenceFlow id="toReviewAddress" sourceRef="reportAddressMatch" targetRef="reviewAddress"/>
+
+        <userTask id="reviewAddress" name="Review address match" flowable:candidateGroups="compliance"/>
+        <sequenceFlow id="addressReviewed" sourceRef="reviewAddress" targetRef="reportOutcome"/>
+
+        <serviceTask id="reportOutcome" name="Report outcome to customer app"
+                     flowable:async="true" flowable:delegateExpression="${reportVerificationOutcome}"/>
+        <sequenceFlow id="toVerificationComplete" sourceRef="reportOutcome" targetRef="verificationComplete"/>
+
+        <endEvent id="verificationComplete" name="Verification complete"/>
+    </process>
+
+    <!-- Layout for diagram viewers such as the engine's status page. -->
+    <bpmndi:BPMNDiagram id="customerVerificationDiagram">
+        <bpmndi:BPMNPlane id="customerVerificationPlane" bpmnElement="customerVerification">
+            <bpmndi:BPMNShape id="customerSubmitted_di" bpmnElement="customerSubmitted">
+                <dc:Bounds x="40" y="182" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="fetchCustomer_di" bpmnElement="fetchCustomer">
+                <dc:Bounds x="120" y="160" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="screenContact_di" bpmnElement="screenContact">
+                <dc:Bounds x="270" y="160" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="contactClear_di" bpmnElement="contactClear" isMarkerVisible="true">
+                <dc:Bounds x="420" y="175" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reportContactMatch_di" bpmnElement="reportContactMatch">
+                <dc:Bounds x="395" y="300" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reviewContact_di" bpmnElement="reviewContact">
+                <dc:Bounds x="545" y="300" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="contactDecision_di" bpmnElement="contactDecision" isMarkerVisible="true">
+                <dc:Bounds x="695" y="315" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="screenAddress_di" bpmnElement="screenAddress">
+                <dc:Bounds x="820" y="160" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="addressClear_di" bpmnElement="addressClear" isMarkerVisible="true">
+                <dc:Bounds x="970" y="175" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reportAddressMatch_di" bpmnElement="reportAddressMatch">
+                <dc:Bounds x="945" y="300" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reviewAddress_di" bpmnElement="reviewAddress">
+                <dc:Bounds x="1095" y="300" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reportOutcome_di" bpmnElement="reportOutcome">
+                <dc:Bounds x="1270" y="160" width="100" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="verificationComplete_di" bpmnElement="verificationComplete">
+                <dc:Bounds x="1420" y="182" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+
+            <bpmndi:BPMNEdge id="toFetchCustomer_di" bpmnElement="toFetchCustomer">
+                <di:waypoint x="76" y="200"/>
+                <di:waypoint x="120" y="200"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="toScreenContact_di" bpmnElement="toScreenContact">
+                <di:waypoint x="220" y="200"/>
+                <di:waypoint x="270" y="200"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="toContactClear_di" bpmnElement="toContactClear">
+                <di:waypoint x="370" y="200"/>
+                <di:waypoint x="420" y="200"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="contactOk_di" bpmnElement="contactOk">
+                <di:waypoint x="470" y="200"/>
+                <di:waypoint x="820" y="200"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="contactFlagged_di" bpmnElement="contactFlagged">
+                <di:waypoint x="445" y="225"/>
+                <di:waypoint x="445" y="300"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="toReviewContact_di" bpmnElement="toReviewContact">
+                <di:waypoint x="495" y="340"/>
+                <di:waypoint x="545" y="340"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="toContactDecision_di" bpmnElement="toContactDecision">
+                <di:waypoint x="645" y="340"/>
+                <di:waypoint x="695" y="340"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="contactApproved_di" bpmnElement="contactApproved">
+                <di:waypoint x="745" y="340"/>
+                <di:waypoint x="870" y="340"/>
+                <di:waypoint x="870" y="240"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="contactRejected_di" bpmnElement="contactRejected">
+                <di:waypoint x="720" y="365"/>
+                <di:waypoint x="720" y="460"/>
+                <di:waypoint x="1300" y="460"/>
+                <di:waypoint x="1300" y="240"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="toAddressClear_di" bpmnElement="toAddressClear">
+                <di:waypoint x="920" y="200"/>
+                <di:waypoint x="970" y="200"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="addressOk_di" bpmnElement="addressOk">
+                <di:waypoint x="1020" y="200"/>
+                <di:waypoint x="1270" y="200"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="addressFlagged_di" bpmnElement="addressFlagged">
+                <di:waypoint x="995" y="225"/>
+                <di:waypoint x="995" y="300"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="toReviewAddress_di" bpmnElement="toReviewAddress">
+                <di:waypoint x="1045" y="340"/>
+                <di:waypoint x="1095" y="340"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="addressReviewed_di" bpmnElement="addressReviewed">
+                <di:waypoint x="1195" y="340"/>
+                <di:waypoint x="1340" y="340"/>
+                <di:waypoint x="1340" y="240"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="toVerificationComplete_di" bpmnElement="toVerificationComplete">
+                <di:waypoint x="1370" y="200"/>
+                <di:waypoint x="1420" y="200"/>
+            </bpmndi:BPMNEdge>
+        </bpmndi:BPMNPlane>
+    </bpmndi:BPMNDiagram>
+</definitions>
